@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+celery
+redis
+python-multipart
+requests
+psycopg2-binary
+rapidfuzz
+python-dateutil

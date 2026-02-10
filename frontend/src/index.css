@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Highlight animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(255, 193, 7, 0.6));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(255, 193, 7, 0.9));
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
