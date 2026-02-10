@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import os
 import shutil
@@ -14,6 +15,16 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Medical Verification MVP")
 
+# Configure CORS
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins if allowed_origins != ["*"] else ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Ensure uploads directory exists
 UPLOAD_DIR = Path("/code/uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -23,8 +34,22 @@ def read_root():
     return {"status": "healthy", "service": "medical-verification-mvp"}
 
 @app.get("/health")
-def health_check():
-    return {"status": "ok"}
+def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint that verifies database connectivity"""
+    try:
+        # Test database connection
+        db.execute("SELECT 1")
+        return {
+            "status": "ok",
+            "database": "connected",
+            "service": "medical-verification-mvp"
+        }
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "database": "disconnected",
+            "error": str(e)
+        }
 
 @app.post("/api/v1/documents/upload")
 async def upload_document(
