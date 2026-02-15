@@ -1,0 +1,10 @@
+frontend/
+backend/
+node_modules/
+*.md
+deploy-staging.sh
+docker-compose.yml
+railway.json
+.env.example
+.gitignore
+test_*.py

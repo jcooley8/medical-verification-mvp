@@ -19,8 +19,28 @@ from datetime import datetime
 from dateutil import parser
 from rapidfuzz import fuzz
 import copy
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+
+# Performance optimization: Cache normalized values
+@lru_cache(maxsize=1000)
+def _cached_normalize_amount(text: str) -> Optional[float]:
+    """Cached version of amount normalization for performance"""
+    cleaned = re.sub(r'[^\d.]', '', text)
+    try:
+        return float(cleaned)
+    except (ValueError, AttributeError):
+        return None
+
+@lru_cache(maxsize=1000)
+def _cached_parse_date(text: str) -> Optional[str]:
+    """Cached version of date parsing for performance"""
+    try:
+        dt = parser.parse(text)
+        return dt.strftime("%Y-%m-%d")
+    except (ValueError, TypeError, parser.ParserError):
+        return None
 
 
 class VerificationLinker:
@@ -428,24 +448,38 @@ class VerificationLinker:
         """Strategy 5: Multi-word span matching"""
         candidates = []
         value_str = str(value).strip()
+        value_lower = value_str.lower()
+        value_word_count = len(value_str.split())
         
         # Only try multi-word if value has multiple words
-        if len(value_str.split()) < 2:
+        if value_word_count < 2:
             return candidates
+        
+        # Performance optimization: limit search scope
+        # Only check window sizes close to actual value length
+        min_window = max(2, value_word_count - 2)
+        max_window = min(value_word_count + 3, 10)
         
         for page in ocr_map.get("pages", []):
             page_num = page.get("page_number", 1)
             words = page.get("words", [])
             
-            # Sliding window of up to 10 consecutive words
-            max_window = min(10, len(words))
+            # Early termination if page has too few words
+            if len(words) < min_window:
+                continue
             
-            for window_size in range(2, max_window + 1):
+            for window_size in range(min_window, min(max_window + 1, len(words) + 1)):
                 for i in range(len(words) - window_size + 1):
                     span = words[i:i + window_size]
                     concatenated = " ".join([w["text"] for w in span])
+                    concatenated_lower = concatenated.lower()
                     
-                    ratio = fuzz.ratio(value_str.lower(), concatenated.lower())
+                    # Quick length check before expensive fuzzy matching
+                    len_diff = abs(len(concatenated_lower) - len(value_lower))
+                    if len_diff > len(value_lower) * 0.5:  # Skip if >50% length difference
+                        continue
+                    
+                    ratio = fuzz.ratio(value_lower, concatenated_lower)
                     
                     if ratio >= 80:
                         # Compute union bounding box
@@ -463,6 +497,10 @@ class VerificationLinker:
                             "word_count": len(span),
                             "fuzzy_ratio": ratio
                         })
+                        
+                        # Performance optimization: if we found a perfect match, no need to continue
+                        if ratio >= 95:
+                            return candidates
         
         return candidates
     
@@ -500,21 +538,13 @@ class VerificationLinker:
         if isinstance(text, (int, float)):
             return float(text)
         
-        # Remove all non-digit and non-decimal point characters
-        cleaned = re.sub(r'[^\d.]', '', str(text))
-        
-        try:
-            return float(cleaned)
-        except (ValueError, AttributeError):
-            return None
+        # Use cached version for string inputs
+        return _cached_normalize_amount(str(text))
     
     def _parse_date(self, text: Any) -> Optional[str]:
         """Parse date string to YYYY-MM-DD canonical format"""
-        try:
-            dt = parser.parse(str(text))
-            return dt.strftime("%Y-%m-%d")
-        except (ValueError, TypeError, parser.ParserError):
-            return None
+        # Use cached version for better performance
+        return _cached_parse_date(str(text))
     
     def _normalize_bbox(
         self,
